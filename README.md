@@ -56,6 +56,8 @@ This starts:
 - **PostgreSQL** on port `5432`
 - **RabbitMQ** on port `5672` | Management UI on `http://localhost:15672` (guest/guest)
 - **LocalStack S3** on port `4566`
+- **Prometheus** on port `9090`
+- **Grafana** on port `3000` (admin/admin)
 - **NotifyHub** on port `8080`
 
 ### 2. Verify everything is running
@@ -65,12 +67,21 @@ docker compose ps
 docker compose logs -f notifyhub
 ```
 
-### 3. Test the API
+### 3. Test the API (Secured with JWT)
 
-#### Create an order (publishes to RabbitMQ)
+#### Step 1: Get a Token
+To interact with the API, you first need a valid JWT for your user.
+```bash
+TOKEN=$(curl -s -X POST "http://localhost:8080/auth/token?userId=user-123" | jq -r .token)
+echo $TOKEN
+```
+*(If you don't have `jq`, just copy the token string from the JSON response).*
+
+#### Step 2: Create an order (publishes to RabbitMQ)
 ```bash
 curl -X POST http://localhost:8080/orders \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
   -d '{"userId": "user-123", "amount": 99.99}'
 ```
 
@@ -82,16 +93,17 @@ Response:
 }
 ```
 
-#### Get all orders for a user (with notifications — N+1 safe)
+#### Step 3: Get all orders for a user (with notifications — N+1 safe)
+*Note: The token's `userId` must match the URL path.*
 ```bash
-curl http://localhost:8080/orders/user/user-123
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/orders/user/user-123
 ```
 
-#### Get presigned S3 URL for an order report
+#### Step 4: Get presigned S3 URL for an order report
 Replace `<ORDER_ID>` with the actual `orderId` returned from the POST request.
 
 ```bash
-curl http://localhost:8080/orders/<ORDER_ID>/report
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/orders/<ORDER_ID>/report
 ```
 
 Response:
@@ -100,6 +112,16 @@ Response:
   "presignedUrl": "http://localhost:4566/notifyhub-reports/order_<ORDER_ID>_report.txt?..."
 }
 ```
+
+---
+
+## Observability
+
+The application exposes metrics via Spring Boot Actuator which are scraped by Prometheus.
+- **Actuator**: `http://localhost:8080/actuator/prometheus`
+- **Prometheus UI**: `http://localhost:9090`
+- **Grafana UI**: `http://localhost:3000` (Login: `admin` / `admin`)
+
 
 ---
 
@@ -231,6 +253,7 @@ Consumer receives order event
 | `AWS_REGION` | `us-east-1` | AWS region |
 | `AWS_ACCESS_KEY` | `test` | AWS access key |
 | `AWS_SECRET_KEY` | `test` | AWS secret key |
+| `JWT_SECRET` | `my_super_secret_key_...` | Secret key for signing JWTs |
 | `SERVER_PORT` | `8080` | App port |
 
 ---

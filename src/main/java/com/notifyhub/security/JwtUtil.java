@@ -11,12 +11,13 @@ import java.util.Date;
 @Component
 public class JwtUtil {
 
-    // For demo purposes, hardcoding a 256-bit secret. In production, use external configuration.
-    private static final String SECRET_KEY = "my_super_secret_key_for_notifyhub_which_is_very_long";
+    @org.springframework.beans.factory.annotation.Value("${jwt.secret:my_super_secret_key_for_notifyhub_which_is_very_long}")
+    private String secretKey;
+
     private static final long EXPIRATION_TIME = 86400000; // 24 hours
 
     private SecretKey getSigningKey() {
-        return Keys.hmacShaKeyFor(SECRET_KEY.getBytes());
+        return Keys.hmacShaKeyFor(secretKey.getBytes());
     }
 
     public String generateToken(String userId) {

@@ -87,6 +87,8 @@ services:
       AWS_SECRET_KEY: test
       # Server
       SERVER_PORT: 8080
+      # Security
+      JWT_SECRET: production_secret_for_jwt_which_should_be_long_enough
     ports:
       - "8080:8080"
     depends_on:
