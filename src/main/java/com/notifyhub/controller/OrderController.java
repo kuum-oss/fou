@@ -55,7 +55,6 @@ public class OrderController {
      * @return list of order responses
      */
     @GetMapping("/user/{userId}")
-    @org.springframework.security.access.prepost.PreAuthorize("#userId == authentication.principal")
     public ResponseEntity<List<OrderResponse>> getOrdersForUser(@PathVariable String userId) {
         log.info("[OrderController] GET /orders/user/{} - fetching orders with notifications", userId);
         List<OrderResponse> orders = orderService.getOrdersForUser(userId);

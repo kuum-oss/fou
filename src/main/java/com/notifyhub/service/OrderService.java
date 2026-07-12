@@ -75,8 +75,12 @@ public class OrderService {
     public String getReportUrl(UUID orderId) {
         log.info("[OrderService] Fetching presigned report URL for orderId='{}'", orderId);
         // Validate order exists
-        Order order = orderRepository.findById(orderId)
+        Order order = orderRepository.findByIdWithNotifications(orderId)
                 .orElseThrow(() -> new OrderNotFoundException("Order not found: " + orderId));
+                
+        boolean isPending = order.getNotifications().stream()
+                .anyMatch(n -> n.getStatus() == NotificationStatus.PENDING_UPLOAD);
+        if (isPending) throw new ReportNotReadyException("Report is still uploading...");
                 
         String currentUserId = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication().getName();
         if (!order.getUserId().equals(currentUserId)) {

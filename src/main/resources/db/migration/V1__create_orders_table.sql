@@ -1,6 +1,6 @@
 CREATE TABLE IF NOT EXISTS orders
 (
-    id         UUID                        NOT NULL DEFAULT gen_random_uuid(),
+    id         UUID                        NOT NULL,
     user_id    VARCHAR(255)                NOT NULL,
     amount     NUMERIC(19, 2)              NOT NULL,
     status     VARCHAR(50)                 NOT NULL,
