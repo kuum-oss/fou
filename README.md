@@ -30,6 +30,9 @@ OrderController ──► OrderProducer ──► RabbitMQ (orders.queue, durabl
 | **S3 Fallback** | If S3 upload fails → notification saved with `PENDING_UPLOAD` status, never throws |
 | **Retry Scheduler** | `@Scheduled` every 5 min retries all `PENDING_UPLOAD` notifications |
 | **Error Handling** | RFC 7807 Problem Details, structured JSON errors |
+| **JWT Security**    | Stateless auth via Bearer token. `POST /auth/token` issues JWT. All `/orders/**` endpoints require valid token. |
+| **Idempotency**     | Duplicate RabbitMQ messages silently ignored via `existsById` check before processing. |
+| **Observability**   | Actuator + Prometheus metrics at `/actuator/prometheus`. Grafana dashboard on port 3000. |
 
 ---
 
@@ -145,6 +148,10 @@ src/
 │   ├── repository/
 │   │   ├── OrderRepository.java       # JOIN FETCH query (N+1 fix)
 │   │   └── NotificationRepository.java
+│   ├── security/
+│   │   ├── JwtAuthFilter.java         # Intercepts and validates JWT
+│   │   ├── JwtUtil.java               # JWT generation and parsing
+│   │   └── SecurityConfig.java        # Spring Security config
 │   └── service/
 │       ├── OrderService.java          # REST service layer
 │       ├── OrderProcessingService.java # Consumer orchestration
