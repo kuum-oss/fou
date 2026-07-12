@@ -1,0 +1,70 @@
+spring:
+  application:
+    name: notifyhub
+
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/notifyhub}
+    username: ${DB_USERNAME:notifyhub}
+    password: ${DB_PASSWORD:notifyhub}
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        default_schema: public
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+    virtual-host: /
+    listener:
+      simple:
+        retry:
+          enabled: true
+          initial-interval: 2000
+          max-attempts: 3
+          multiplier: 1.5
+
+aws:
+  s3:
+    endpoint: ${AWS_S3_ENDPOINT:http://localhost:4566}
+    bucket-name: ${AWS_S3_BUCKET:notifyhub-reports}
+    region: ${AWS_REGION:us-east-1}
+    access-key: ${AWS_ACCESS_KEY:test}
+    secret-key: ${AWS_SECRET_KEY:test}
+    presigned-url-expiration-minutes: 15
+
+rabbitmq:
+  queue:
+    orders: orders.queue
+    orders-dlq: orders.dlq
+  exchange:
+    orders: orders.exchange
+  routing-key:
+    orders: orders.routing-key
+
+server:
+  port: ${SERVER_PORT:8080}
+
+scheduler:
+  s3-retry:
+    fixed-delay: 300000  # 5 minutes in milliseconds
+
+logging:
+  level:
+    com.notifyhub: DEBUG
+    org.springframework.amqp: INFO
+    org.hibernate.SQL: DEBUG
+    org.hibernate.type.descriptor.sql: TRACE

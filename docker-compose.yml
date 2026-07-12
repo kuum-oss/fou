@@ -1,0 +1,112 @@
+services:
+
+  # ─── PostgreSQL ────────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: notifyhub-postgres
+    environment:
+      POSTGRES_DB: notifyhub
+      POSTGRES_USER: notifyhub
+      POSTGRES_PASSWORD: notifyhub
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U notifyhub -d notifyhub"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - notifyhub-network
+
+  # ─── RabbitMQ ─────────────────────────────────────────────────────────────────
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: notifyhub-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    ports:
+      - "5672:5672"       # AMQP
+      - "15672:15672"     # Management UI
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "check_port_connectivity"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - notifyhub-network
+
+  # ─── LocalStack (AWS S3) ───────────────────────────────────────────────────────
+  localstack:
+    image: localstack/localstack:3.5
+    container_name: notifyhub-localstack
+    environment:
+      SERVICES: s3
+      DEFAULT_REGION: us-east-1
+      AWS_DEFAULT_REGION: us-east-1
+      LOCALSTACK_HOST: localstack
+    ports:
+      - "4566:4566"
+    volumes:
+      - localstack_data:/var/lib/localstack
+      - /var/run/docker.sock:/var/run/docker.sock
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:4566/_localstack/health | grep -q '\"s3\"'"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+    networks:
+      - notifyhub-network
+
+  # ─── NotifyHub Application ────────────────────────────────────────────────────
+  notifyhub:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: notifyhub-app
+    environment:
+      # Database
+      DB_URL: jdbc:postgresql://postgres:5432/notifyhub
+      DB_USERNAME: notifyhub
+      DB_PASSWORD: notifyhub
+      # RabbitMQ
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USERNAME: guest
+      RABBITMQ_PASSWORD: guest
+      # AWS S3 (LocalStack)
+      AWS_S3_ENDPOINT: http://localstack:4566
+      AWS_S3_BUCKET: notifyhub-reports
+      AWS_REGION: us-east-1
+      AWS_ACCESS_KEY: test
+      AWS_SECRET_KEY: test
+      # Server
+      SERVER_PORT: 8080
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      localstack:
+        condition: service_healthy
+    networks:
+      - notifyhub-network
+    restart: on-failure
+
+# ─── Volumes ───────────────────────────────────────────────────────────────────
+volumes:
+  postgres_data:
+  rabbitmq_data:
+  localstack_data:
+
+# ─── Networks ──────────────────────────────────────────────────────────────────
+networks:
+  notifyhub-network:
+    driver: bridge
