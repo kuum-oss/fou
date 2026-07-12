@@ -55,6 +55,15 @@ rabbitmq:
   routing-key:
     orders: orders.routing-key
 
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  metrics:
+    tags:
+      application: notifyhub
+
 server:
   port: ${SERVER_PORT:8080}
 

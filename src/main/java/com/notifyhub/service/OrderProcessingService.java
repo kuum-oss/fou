@@ -11,7 +11,7 @@ import com.notifyhub.repository.OrderRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.LocalDateTime;
 
@@ -27,62 +27,75 @@ public class OrderProcessingService {
     private final OrderRepository orderRepository;
     private final NotificationRepository notificationRepository;
     private final S3ReportService s3ReportService;
+    private final TransactionTemplate transactionTemplate;
 
     /**
      * Processes an inbound order event from RabbitMQ.
-     * <ol>
-     *   <li>Persists the Order entity</li>
-     *   <li>Creates an EMAIL Notification entity with status SENT</li>
-     *   <li>Attempts to upload a report to S3 — on failure, sets PENDING_UPLOAD (no exception propagated)</li>
-     * </ol>
+     * Uses exactly-once semantics via idempotency check.
+     * Commits to DB *before* attempting S3 upload to prevent data loss.
      *
      * @param event the incoming order event
      */
-    @Transactional
     public void processOrderEvent(OrderEventDto event) {
         log.info("[OrderProcessingService] Processing order event: orderId='{}'", event.orderId());
 
-        // 1. Persist the Order
-        Order order = Order.builder()
-                .id(event.orderId())
-                .userId(event.userId())
-                .amount(event.amount())
-                .status(OrderStatus.valueOf(event.status()))
-                .build();
+        // Idempotency check: exactly-once processing
+        if (orderRepository.existsById(event.orderId())) {
+            log.warn("[OrderProcessingService] Duplicate event ignored: {}", event.orderId());
+            return;
+        }
 
-        order = orderRepository.save(order);
-        log.debug("[OrderProcessingService] Saved order: id='{}'", order.getId());
+        // 1. Persist the Order and Notification (as PENDING_UPLOAD) in a single transaction
+        Notification notification = transactionTemplate.execute(status -> {
+            Order order = Order.builder()
+                    .id(event.orderId())
+                    .userId(event.userId())
+                    .amount(event.amount())
+                    .status(OrderStatus.valueOf(event.status()))
+                    .build();
 
-        // 2. Create and persist a Notification
-        Notification notification = Notification.builder()
-                .order(order)
-                .type(NotificationType.EMAIL)
-                .sentAt(LocalDateTime.now())
-                .status(NotificationStatus.SENT)
-                .build();
+            order = orderRepository.save(order);
+            log.debug("[OrderProcessingService] Saved order: id='{}'", order.getId());
 
-        notification = notificationRepository.save(notification);
-        log.info("[OrderProcessingService] Created notification: id='{}', orderId='{}'",
-                notification.getId(), order.getId());
+            Notification notif = Notification.builder()
+                    .order(order)
+                    .type(NotificationType.EMAIL)
+                    .sentAt(LocalDateTime.now())
+                    .status(NotificationStatus.PENDING_UPLOAD)
+                    .build();
 
-        // 3. Upload S3 report — graceful degradation on failure
-        uploadReportSafely(order, notification);
+            return notificationRepository.save(notif);
+        });
+
+        if (notification == null) {
+            log.error("[OrderProcessingService] Failed to persist order/notification");
+            return;
+        }
+
+        // 2. Upload S3 report outside the transaction
+        uploadReportSafely(notification.getOrder(), notification);
     }
 
     /**
      * Attempts to upload the order report to S3.
-     * If S3 is unavailable, sets the notification status to PENDING_UPLOAD
-     * so the scheduler can retry later. Never throws — the main flow must not fail.
+     * On success, marks the notification as SENT.
+     * On failure, it gracefully degrades. The notification remains PENDING_UPLOAD
+     * and the scheduler will retry later.
      */
     private void uploadReportSafely(Order order, Notification notification) {
         try {
             s3ReportService.uploadReport(order);
             log.info("[OrderProcessingService] S3 report uploaded successfully for orderId='{}'", order.getId());
+            
+            // Mark as SENT in a new transaction
+            transactionTemplate.executeWithoutResult(status -> {
+                notification.setStatus(NotificationStatus.SENT);
+                notificationRepository.save(notification);
+            });
         } catch (Exception e) {
-            log.warn("[OrderProcessingService] S3 upload failed for orderId='{}', setting status to PENDING_UPLOAD. Error: {}",
+            log.warn("[OrderProcessingService] S3 upload failed for orderId='{}', keeping status as PENDING_UPLOAD. Error: {}",
                     order.getId(), e.getMessage());
-            notification.setStatus(NotificationStatus.PENDING_UPLOAD);
-            notificationRepository.save(notification);
+            // No need to update the DB, it's already PENDING_UPLOAD from step 1
         }
     }
 }

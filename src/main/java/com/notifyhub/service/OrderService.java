@@ -56,6 +56,7 @@ public class OrderService {
      * @return list of order responses with nested notifications
      */
     @Transactional(readOnly = true)
+    @org.springframework.security.access.prepost.PreAuthorize("#userId == authentication.name")
     public List<OrderResponse> getOrdersForUser(String userId) {
         log.info("[OrderService] Fetching orders with notifications for userId='{}'", userId);
         List<Order> orders = orderRepository.findAllByUserIdWithNotifications(userId);
@@ -65,6 +66,7 @@ public class OrderService {
 
     /**
      * Returns a presigned S3 URL for the order's report file.
+     * Checks if the authenticated user is the owner of the order.
      *
      * @param orderId the order UUID
      * @return presigned URL valid for 15 minutes
@@ -73,8 +75,14 @@ public class OrderService {
     public String getReportUrl(UUID orderId) {
         log.info("[OrderService] Fetching presigned report URL for orderId='{}'", orderId);
         // Validate order exists
-        orderRepository.findById(orderId)
+        Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new OrderNotFoundException("Order not found: " + orderId));
+                
+        String currentUserId = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication().getName();
+        if (!order.getUserId().equals(currentUserId)) {
+            throw new org.springframework.security.access.AccessDeniedException("You do not have permission to access this order's report");
+        }
+        
         return s3ReportService.generatePresignedUrl(orderId);
     }
 
