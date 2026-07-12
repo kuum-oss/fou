@@ -113,6 +113,9 @@ class S3AndRepositoryIntegrationTest {
         }
     }
 
+    @Autowired
+    private com.notifyhub.service.OrderProcessingService orderProcessingService;
+
     // ─── Tests ────────────────────────────────────────────────────────────────────
 
     @Test
@@ -181,31 +184,31 @@ class S3AndRepositoryIntegrationTest {
     @Test
     @DisplayName("PENDING_UPLOAD fallback: notification saved when S3 is unavailable")
     void whenS3Unavailable_thenNotificationSavedWithPendingUploadStatus() {
-        // This test verifies the fallback logic by checking what happens
-        // when the S3ReportService throws — the OrderProcessingService catches it
-        // and sets PENDING_UPLOAD. We simulate by checking the NotificationStatus enum directly.
-        assertThat(NotificationStatus.PENDING_UPLOAD).isNotNull();
+        // GIVEN — empty and delete the bucket so that S3 upload fails
+        try {
+            var objects = s3Client.listObjectsV2(software.amazon.awssdk.services.s3.model.ListObjectsV2Request.builder().bucket(bucketName).build());
+            for (var obj : objects.contents()) {
+                s3Client.deleteObject(software.amazon.awssdk.services.s3.model.DeleteObjectRequest.builder().bucket(bucketName).key(obj.key()).build());
+            }
+            s3Client.deleteBucket(software.amazon.awssdk.services.s3.model.DeleteBucketRequest.builder().bucket(bucketName).build());
+        } catch (Exception ignored) {}
 
-        // Create a notification with PENDING_UPLOAD status directly (simulating fallback)
-        Order order = orderRepository.save(Order.builder()
-                .userId("user-fallback")
-                .amount(new BigDecimal("75.00"))
-                .status(OrderStatus.PENDING)
-                .build());
+        java.util.UUID orderId = java.util.UUID.randomUUID();
+        com.notifyhub.dto.OrderEventDto event = new com.notifyhub.dto.OrderEventDto(orderId, "user-fallback", new BigDecimal("75.00"), "PENDING");
 
-        Notification notification = notificationRepository.save(Notification.builder()
-                .order(order)
-                .type(NotificationType.EMAIL)
-                .sentAt(LocalDateTime.now())
-                .status(NotificationStatus.PENDING_UPLOAD)
-                .build());
+        // WHEN — process the event
+        orderProcessingService.processOrderEvent(event);
 
-        // Verify persisted correctly
+        // THEN — order is saved, and notification is in PENDING_UPLOAD state
+        Order savedOrder = orderRepository.findByIdWithNotifications(orderId).orElseThrow();
+        assertThat(savedOrder.getNotifications()).hasSize(1);
+        assertThat(savedOrder.getNotifications().get(0).getStatus()).isEqualTo(NotificationStatus.PENDING_UPLOAD);
+
+        // Verify persisted correctly via repository custom method
         List<Notification> pending = notificationRepository
                 .findAllByStatusWithOrder(NotificationStatus.PENDING_UPLOAD);
 
         assertThat(pending).hasSize(1);
-        assertThat(pending.get(0).getId()).isEqualTo(notification.getId());
-        assertThat(pending.get(0).getOrder().getId()).isEqualTo(order.getId());
+        assertThat(pending.get(0).getOrder().getId()).isEqualTo(orderId);
     }
 }

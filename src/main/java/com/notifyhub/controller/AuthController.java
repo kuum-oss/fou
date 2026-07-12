@@ -18,8 +18,10 @@ public class AuthController {
     private final JwtUtil jwtUtil;
 
     @PostMapping("/token")
-    public ResponseEntity<Map<String, String>> getToken(@RequestParam String userId) {
-        String token = jwtUtil.generateToken(userId);
+    public ResponseEntity<Map<String, String>> getToken(@org.springframework.web.bind.annotation.RequestBody TokenRequest request) {
+        String token = jwtUtil.generateToken(request.userId());
         return ResponseEntity.ok(Map.of("token", token));
     }
+
+    public record TokenRequest(String userId) {}
 }

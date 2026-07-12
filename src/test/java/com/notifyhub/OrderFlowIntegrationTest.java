@@ -70,13 +70,6 @@ class OrderFlowIntegrationTest {
         registry.add("spring.rabbitmq.port", rabbitMQ::getAmqpPort);
         registry.add("spring.rabbitmq.username", rabbitMQ::getAdminUsername);
         registry.add("spring.rabbitmq.password", rabbitMQ::getAdminPassword);
-
-        // Disable S3 by pointing to a non-existent endpoint so we test PENDING_UPLOAD fallback
-        registry.add("aws.s3.endpoint", () -> "http://localhost:19999");
-        registry.add("aws.s3.bucket-name", () -> "test-bucket");
-        registry.add("aws.s3.access-key", () -> "test");
-        registry.add("aws.s3.secret-key", () -> "test");
-        registry.add("aws.s3.region", () -> "us-east-1");
     }
 
     // ─── Injected beans ───────────────────────────────────────────────────────────
@@ -93,6 +86,12 @@ class OrderFlowIntegrationTest {
     @Autowired
     private NotificationRepository notificationRepository;
 
+    @Autowired
+    private OrderProducer orderProducer;
+
+    @Autowired
+    private com.notifyhub.security.JwtUtil jwtUtil;
+
     @BeforeEach
     void cleanUp() {
         notificationRepository.deleteAll();
@@ -108,6 +107,7 @@ class OrderFlowIntegrationTest {
         CreateOrderRequest request = new CreateOrderRequest("user-123", new BigDecimal("99.99"));
 
         String responseBody = mockMvc.perform(post("/orders")
+                        .header("Authorization", "Bearer " + jwtUtil.generateToken("user-123"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isAccepted())
@@ -165,7 +165,4 @@ class OrderFlowIntegrationTest {
         var notifications = notificationRepository.findByOrderId(orderId);
         assertThat(notifications).isNotEmpty();
     }
-
-    @Autowired
-    private OrderProducer orderProducer;
 }

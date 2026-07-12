@@ -7,9 +7,6 @@ spring:
     password: ${DB_PASSWORD:notifyhub}
     driver-class-name: org.postgresql.Driver
 
-jwt:
-  secret: ${JWT_SECRET:my_super_secret_key_for_notifyhub_which_is_very_long}
-
   jpa:
     hibernate:
       ddl-auto: validate
@@ -79,3 +76,6 @@ logging:
     org.springframework.amqp: INFO
     org.hibernate.SQL: DEBUG
     org.hibernate.type.descriptor.sql: TRACE
+
+jwt:
+  secret: ${JWT_SECRET:my_super_secret_key_for_notifyhub_which_is_very_long}

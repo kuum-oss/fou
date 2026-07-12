@@ -27,8 +27,12 @@ Could not find a valid Docker environment.
 ```
 This is a known issue between the `Testcontainers` library and certain newer versions of **Docker Desktop** on macOS. Docker's internal API rejects the Testcontainers connection attempt with a `400 Bad Request`.
 
+**Note:** Attempting to bypass this using environment variables like `TESTCONTAINERS_RYUK_DISABLED=true` or overriding `DOCKER_HOST` / `TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE` usually **does not work**, as the root cause is a structural incompatibility with how Docker Desktop maps the socket. 
+
+As a result, tests like `OrderFlowIntegrationTest` and `S3AndRepositoryIntegrationTest` will immediately fail with `ExceptionInInitializerError` or `IllegalStateException` before executing any test logic.
+
 ### Solution:
-This is strictly a local testing environment issue and **does not affect the application itself**. If you encounter this error, you can simply skip the integration tests when building the project:
+This is strictly a local testing environment issue and **does not affect the application itself**. If you encounter this error, you cannot run integration tests locally. Simply skip them when building the project:
 ```bash
 JAVA_HOME=/Library/Java/JavaVirtualMachines/temurin-21.jdk/Contents/Home ./mvnw clean package -DskipTests
 ```
